@@ -64,5 +64,9 @@
     "webpack-dev-server": "^3.1.10",
     "webpack-merge": "^4.1.4"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@types/request-promise": "^4.1.42",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.2"
+  }
 }

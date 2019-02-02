@@ -1,12 +1,112 @@
 $bg-color: yellow;
 $border-color: red;
-
+$border: 1px solid black;
+$border-5er: 2px solid black;
 .app {
-  font-family: helvetica, arial, sans-serif;
+  // font-family: helvetica, arial, sans-serif;
   padding: 2em;
-  border: 5px solid $border-color;
+
 
   p {
     background-color: $bg-color;
   }
+}
+.solution-row {
+  display: flex;
+}
+.solution-row div {
+  border: $border;
+  width: 20px;
+  height: 20px;
+}
+.solution-yes {
+  background-color: green;
+}
+.solution-no {
+  background-color: red;
+}
+.picross-viewer {
+  width: 100%;
+  .row {
+    display: flex;
+    > * {
+      width: 20px;
+      height: 20px;
+    }
+  }
+  .header-col {
+    border-bottom: $border;
+    border-right: $border;
+    text-align: center;
+    height: auto;
+  }
+  .header-col-spacer {
+    width: 150px;
+  }
+  .header-row {
+    border-bottom: $border;
+    border-right: $border;
+    display: flex;
+    width: 150px;
+  }
+  .header-row-calculating, .header-col-calculating {
+    background-color: yellow;
+  }
+  .header-row-hint {
+    margin-right: 2px;
+  }
+  .field {
+    border-bottom: $border;
+    border-right: $border;
+    position: relative;
+    &::after {
+      position: absolute;
+      content: " ";
+      display: block;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      opacity: 0;
+      transition: opacity 0.25s;
+      & .field-yes {
+
+      }
+    }
+  }
+  .row > :nth-child(5n+1) {
+    border-right: $border-5er;
+  }
+  .row:nth-child(5n + 1) > * {
+    border-bottom: $border-5er;
+  }
+  .field-yes::after {
+    opacity: 1;
+    background-color: green;
+  }
+  .field-no::after {
+    opacity: 1;
+    background-color: red;
+  }
+  .field-yes-guess::after {
+    opacity: 1;
+    background: repeating-linear-gradient(
+      45deg,
+      green,
+      green 4px,
+      white 4px,
+      white 8px
+    );
+  }
+  .field-no-guess::after {
+    opacity: 1;
+    background: repeating-linear-gradient(
+      45deg,
+      red,
+      red 4px,
+      white 4px,
+      white 8px
+    );
+  }
+
 }

@@ -1,11 +1,29 @@
 import {EventEmitter} from 'events';
+import RowColWorker = require('worker-loader!./rowColWorker');
+import * as bluebird from 'bluebird';
+// const delay = (time: number) => new Promise(resolve => window.setTimeout(resolve, time));
+export class ContradictionError extends Error {
+  contradiction = true;
+  constructor (m: string) {
+    super(m);
+    Object.setPrototypeOf(this, ContradictionError.prototype);
+  }
+}
 export class Picross {
   public readonly size: number;
   public emitter = new EventEmitter();
   public solution: SolutionField[][];
   public guess: IGuess[] = [];
+  private workerPool: RowColWorker[] = [];
+  private rowCache = new Map<number, SolutionField[]>();
+  private colCache = new Map<number, SolutionField[]>();
+  private mostExpensiveRowOrCol = 0;
   constructor(public rowsHints: IHints, public colsHints: IHints) {
+
     this.size = Math.max(rowsHints.length, colsHints.length);
+    for (let i = 0; i < this.size; i++) {
+      this.workerPool.push(new RowColWorker());
+    }
     while (rowsHints.length < this.size) {
       rowsHints.push([]);
     }
@@ -27,117 +45,63 @@ export class Picross {
       return JSON.parse(JSON.stringify({guessSolution, coordinates}));
     })});
   }
-  async solveRowsOrColls(rows: boolean) {
+  async solveRowsOrColls(rows: boolean, maxCost: number) {
     const rowOrCollHints = rows ? this.rowsHints : this.colsHints;
-    let index = -1;
-    for (const hints of rowOrCollHints) {
-      index++;
-      let filled = true;
-      for (let i = 0; i < this.size; i++) {
-        let field = rows ? this.solution[index][i] : this.solution[i][index];
-        if (field === SolutionField.Unknown) {
-          filled = false;
-        }
-      }
-      if (filled) {
-        let noGuess = true;
-        for (const guess of this.guess) {
-          if ((rows && guess.coordinates.row === index) || (!rows && guess.coordinates.col === index)) {
-            noGuess = false;
-          }
-        }
-        if (noGuess) {
-          continue;
-        }
-      }
+    await bluebird.map(rowOrCollHints, async (hints, index) => {
+      let cacheSame = true;
       if (rows) {
-        this.emitter.emit('calculating', {row: index, col: -1});
-      } else {
-        this.emitter.emit('calculating', {row: -1, col: index});
-      }
-      await this.animationFrame();
-      // console.log(`Solving for ${rows ? 'rows' : 'cols'} index: ${index}, hints: ${hints}`);
-      const possibleSolutions = this.generateAllSolutionForRow(hints).filter(solution => {
-        let possible = true;
-        for (let i = 0; i < this.size; i++) {
-          let field = rows ? this.solution[index][i] : this.solution[i][index];
-          if (field === SolutionField.Unknown) {
-
-          } else if (field !== solution[i]) {
-            return false;
-          }
-        }
-        let pointer = 0;
-        for (const hint of hints) {
-          while (solution[pointer] === SolutionField.No) {
-            pointer++;
-            if (typeof solution[pointer] === 'undefined') {
-              possible = false;
-              break;
-            }
-          }
-          if (!possible) {
-            break;
-          }
-          for (let i = 0; i < hint; i++) {
-            if (typeof solution[pointer + i] !== 'undefined' && solution[pointer + i] === SolutionField.Yes) {
-
-            } else {
-              possible = false;
-            }
-          }
-          pointer += hint;
-          if (typeof solution[pointer] !== 'undefined' && solution[pointer] === SolutionField.Yes) {
-            possible = false;
-          }
-          pointer++;
-          if (!possible) {
-            break;
-          }
-        }
-        while (typeof solution[pointer] !== 'undefined') {
-          if (solution[pointer] === SolutionField.Yes) {
-            possible = false;
-          }
-          pointer++;
-        }
-        return possible;
-      });
-      if (possibleSolutions.length === 0) {
-        throw new Error(`No Possible Solution. Whut? index: ${index}` + JSON.stringify(hints));
-      }
-      // console.log(possibleSolutions, hints);
-      if (possibleSolutions.length === 1) {
-        if (rows) {
-          for (let i = 0; i < this.size; i++) {
-            this.solution[index][i] = possibleSolutions[0][i];
-          }
+        const cache = this.rowCache.get(index);
+        if (typeof cache === 'undefined') {
+          cacheSame = false;
         } else {
           for (let i = 0; i < this.size; i++) {
-            this.solution[i][index] = possibleSolutions[0][i];
+            if (cache[i] !== this.solution[index][i]) {
+              cacheSame = false;
+            }
           }
         }
       } else {
-        for (let i = 0; i < this.size; i++) {
-          let sameOnAll = true;
-          const value = possibleSolutions[0][i];
-          for (const possibleSolution of possibleSolutions) {
-            if (possibleSolution[i] !== value) {
-              sameOnAll = false;
-            }
-          }
-          if (sameOnAll) {
-            if (rows) {
-              this.solution[index][i] = value;
-            } else {
-              this.solution[i][index] = value;
+        const cache = this.colCache.get(index);
+        if (typeof cache === 'undefined') {
+          cacheSame = false;
+        } else {
+          for (let i = 0; i < this.size; i++) {
+            if (cache[i] !== this.solution[i][index]) {
+              cacheSame = false;
             }
           }
         }
       }
-      await this.animationFrame();
-      this.emitter.emit('partial', this.solution);
-    }
+      if (!cacheSame) {
+        const evaluation = await this.optimizedRowOrCol(rows, hints, index, maxCost);
+        if (evaluation !== false) {
+          if (rows) {
+            this.emitter.emit('calculating', {row: index, col: -1});
+          } else {
+            this.emitter.emit('calculating', {row: -1, col: index});
+          }
+          await this.animationFrame();
+          let i = -1;
+          for (const field of evaluation) {
+            i++;
+            if (field !== SolutionField.Unknown) {
+              if (rows) {
+                this.solution[index][i] = field;
+              } else {
+                this.solution[i][index] = field;
+              }
+            }
+          }
+          if (rows) {
+            this.rowCache.set(index, evaluation);
+          } else {
+            this.colCache.set(index, evaluation);
+          }
+        }
+        this.emitter.emit('partial', this.solution);
+      }
+    }, {concurrency: 1});
+    await this.animationFrame();
   }
   async animationFrame() {
     // return new Promise(resolve => {
@@ -151,7 +115,154 @@ export class Picross {
       });
     });
   }
-
+  hardCopyArray<Type>(input: Type[]): Type[] {
+    const ret: Type[] = [];
+    for (const child of input) {
+      ret.push(child);
+    }
+    return ret;
+  }
+  solveBorder(baseLine: SolutionField[], hints: number[]) {
+    let i = 0;
+    let changed = false;
+    while (baseLine[i] === SolutionField.No) {
+      i++;
+    }
+    if (baseLine[i] === SolutionField.Yes) {
+      for (let x = 0; x < hints[0]; x++) {
+        if (baseLine[i + x] === SolutionField.No) {
+          throw new ContradictionError('asd');
+        } else if (baseLine[i + x] === SolutionField.Unknown) {
+          baseLine[i + x] = SolutionField.Yes;
+          changed = true;
+        }
+      }
+      if (baseLine[i + hints[0]] === SolutionField.Yes) {
+        throw new ContradictionError('asd2');
+      } else if (baseLine[i + hints[0]] === SolutionField.Unknown) {
+        baseLine[i + hints[0]] = SolutionField.No;
+        changed = true;
+      }
+    }
+    i = this.size - 1;
+    while (baseLine[i] === SolutionField.No) {
+      i--;
+    }
+    if (baseLine[i] === SolutionField.Yes) {
+      const lastHint = hints[hints.length - 1];
+      for (let x = 0; x < lastHint; x++) {
+        if (baseLine[i - x] === SolutionField.No) {
+          throw new ContradictionError('asd');
+        } else if (baseLine[i - x] === SolutionField.Unknown) {
+          baseLine[i - x] = SolutionField.Yes;
+          changed = true;
+        }
+      }
+      if (baseLine[i - lastHint] === SolutionField.Yes) {
+        throw new ContradictionError('asd2');
+      } else if (baseLine[i - lastHint] === SolutionField.Unknown) {
+        baseLine[i - lastHint] = SolutionField.No;
+        changed = true;
+      }
+    }
+    return {changed, baseLine};
+  }
+  async optimizedRowOrCol(rows: boolean, hints: number[], index: number, maxCost: number) {
+    const totalSpace = this.size - hints.reduce((prev, curr) => prev + curr, 0);
+    const cost = totalSpace * hints.length;
+    const baseLine: SolutionField[] = [];
+    for (let i = 0; i < this.size; i++) {
+      if (rows) {
+        baseLine.push(this.solution[index][i]);
+      } else {
+        baseLine.push(this.solution[i][index]);
+      }
+    }
+    if (cost > maxCost) {
+      if (this.mostExpensiveRowOrCol < cost) {
+        this.mostExpensiveRowOrCol = cost;
+      }
+      const {changed, baseLine: result} = this.solveBorder(baseLine, hints);
+      if (changed) {
+        return result;
+      }
+      return false;
+    }
+    console.log(totalSpace, hints.length);
+    if (hints.length === 0) {
+      return Array(this.size).fill(SolutionField.No);
+    }
+    let spacings: number[] = [];
+    for (let i = 0; i < hints.length; i++) {
+      spacings.push(i === 0 ? 0 : 1);
+    }
+    let running = true;
+    let firstSolution: SolutionField[]|null = null;
+    while (running) {
+      const solution = Array(this.size).fill(SolutionField.No);
+      let offset = 0;
+      let conflict = false;
+      for (const [spaceIndex, space] of spacings.entries()) {
+        for (let i = 0; i < space; i++) {
+          if (baseLine[offset] === SolutionField.Yes) {
+            conflict = true;
+          }
+          offset += 1;
+        }
+        for (let i = 0; i < hints[spaceIndex]; i++) {
+          if (baseLine[offset] !== SolutionField.No) {
+            solution[offset] = SolutionField.Yes;
+          } else {
+            conflict = true;
+          }
+          offset++;
+        }
+      }
+      for (let i = offset; i < this.size; i++) {
+        if (baseLine[i] === SolutionField.Yes) {
+          conflict = true;
+        }
+      }
+      if (solution.length !== this.size) {
+        throw new Error('eh');
+      }
+      if (!conflict) {
+        if (firstSolution === null) {
+          firstSolution = this.hardCopyArray(solution);
+        } else {
+          for (let i = 0; i < this.size; i++) {
+            if (firstSolution[i] !== solution[i]) {
+              firstSolution[i] = SolutionField.Unknown;
+            }
+          }
+        }
+      }
+      spacings[0]++;
+      let spaceUsed = spacings.reduce((prev, curr) => prev + curr, 0);
+      let i = 1;
+      while (spaceUsed > totalSpace && running) {
+        if (i === hints.length ) {
+          // debugger;
+          console.log('Dunso?');
+          running = false;
+          // await this.animationFrame();
+        }
+        spacings[0] = 0;
+        for (let x = 1; x < i; x++) {
+          spacings[x] = 1;
+        }
+        spacings[i]++;
+        spaceUsed = spacings.reduce((prev, curr) => prev + curr, 0);
+        i++;
+      }
+      // console.log(spacings, i);
+      // running = false;
+    }
+    if (firstSolution === null) {
+      throw new ContradictionError('asd5');
+    }
+    return firstSolution;
+  }
   verifySolution(): boolean {
     for (let rowI = 0; rowI < this.size; rowI++) {
       let colI = 0;
@@ -195,64 +306,75 @@ export class Picross {
     let counter = 0;
     let solved = false;
     this.guess = [];
+    let maxCost = 30;
     while (!solved) {
       let changed = true;
       let jumpedOutDirect = true;
+      maxCost = 10;
       try {
         while (changed) {
           changed = false;
           let before = JSON.stringify(this.solution);
           if (!disableRow) {
-            await this.solveRowsOrColls(true);
-            await this.animationFrame();
+            await this.solveRowsOrColls(true, maxCost);
+            // await this.animationFrame();
             this.emitter.emit('partial', this.solution);
           }
           if (!disableCol) {
-            await this.solveRowsOrColls(false);
-            await this.animationFrame();
+            await this.solveRowsOrColls(false, maxCost);
+            // await this.animationFrame();
             this.emitter.emit('partial', this.solution);
           }
           changed = before !== JSON.stringify(this.solution);
+          if (!changed) {
+            maxCost += 10;
+            console.log('maxCost', maxCost, this.mostExpensiveRowOrCol);
+            if (maxCost < this.mostExpensiveRowOrCol) {
+              changed = true;
+            }
+          }
           if (changed) {
             jumpedOutDirect = false;
           }
           console.log(counter);
         }
       } catch (e) {
-        console.log('found irregular, jumping back', e);
-        console.log(`guess length: ${this.guess.length} typeof: ${typeof this.guess}`);
-        if (this.guess.length === 0) {
-          throw new Error('found irregular, no guess');
-        }
-        if (jumpedOutDirect) {
-          let i = this.guess.length - 1;
-          while (i--) {
-             if (this.guess[i].guessSolution === true) {
-              break;
+        if (e.contradiction) {
+          console.log('found irregular, jumping back', e);
+          console.log(`guess length: ${this.guess.length} typeof: ${typeof this.guess}`);
+          if (this.guess.length === 0) {
+            throw new Error('found irregular, no guess');
+          }
+          if (jumpedOutDirect) {
+            let i = this.guess.length - 1;
+            while (i--) {
+              if (this.guess[i].guessSolution === true) {
+                break;
+              }
+            }
+            console.log(i, 'i');
+            this.guess[i].guessSolution = false;
+            this.solution = this.guess[i].solutionBefore;
+            this.solution[this.guess[i].coordinates.row][this.guess[i].coordinates.col] = SolutionField.No;
+            if (i > 0) {
+              this.guess.splice(i + 1);
+            } else {
+              this.guess.splice(0);
+            }
+          } else {
+            const guess = this.guess[this.guess.length - 1];
+            guess.guessSolution = false;
+            this.solution = guess.solutionBefore;
+            this.solution[guess.coordinates.row][guess.coordinates.col] = SolutionField.No;
+            if (this.guess.length === 1) {
+              this.guess.splice(0);
             }
           }
-          console.log(i, 'i');
-          this.guess[i].guessSolution = false;
-          this.solution = this.guess[i].solutionBefore;
-          this.solution[this.guess[i].coordinates.row][this.guess[i].coordinates.col] = SolutionField.No;
-          if (i > 0) {
-            this.guess.splice(i + 1);
-          } else {
-            this.guess.splice(0);
-          }
-
+          this.emitter.emit('partial', this.solution);
+          this.emitGuess();
         } else {
-          const guess = this.guess[this.guess.length - 1];
-          guess.guessSolution = false;
-          this.solution = guess.solutionBefore;
-          this.solution[guess.coordinates.row][guess.coordinates.col] = SolutionField.No;
-          if (this.guess.length === 1) {
-            this.guess.splice(0);
-          }
+          throw (e);
         }
-        this.emitter.emit('partial', this.solution);
-
-        this.emitGuess();
       }
       solved = true;
       for (const solutionRow of this.solution) {
@@ -265,29 +387,42 @@ export class Picross {
       // solved = true;
       if (!solved) {
         // guess
-        let changedSomething = false;
-        let row = -1;
-        for (const solutionRow of this.solution)  {
-          row++;
-          let col = -1;
-          for (const solutionCol of solutionRow) {
-            col++;
-            if (!changedSomething && solutionCol === SolutionField.Unknown) {
-              solutionRow[col] = SolutionField.Yes;
-              changedSomething = true;
-              const guess = {
-                guessSolution: true,
-                coordinates: {
-                  row, col
-                },
-                solutionBefore: this.solution.map(row => row.map(col => col))
-              };
-              this.guess.push(guess);
-              console.log(guess);
-              this.emitGuess();
-            }
-          }
-        }
+        // let changedSomething = false;
+        // let row = -1;
+        // for (const solutionRow of this.solution)  {
+        //   row++;
+        //   let col = -1;
+        //   for (const solutionCol of solutionRow) {
+        //     col++;
+        //     if (!changedSomething && solutionCol === SolutionField.Unknown) {
+        //       solutionRow[col] = SolutionField.Yes;
+        //       changedSomething = true;
+        //       const guess = {
+        //         guessSolution: true,
+        //         coordinates: {
+        //           row, col
+        //         },
+        //         solutionBefore: this.solution.map(row => row.map(col => col))
+        //       };
+        //       this.guess.push(guess);
+        //       console.log(guess);
+        //       this.emitGuess();
+        //     }
+        //   }
+        // }
+        const potGuess = this.findGuessPosition();
+        this.solution[potGuess.row][potGuess.col] = SolutionField.Yes;
+        const guess = {
+          guessSolution: true,
+          coordinates: {
+            row: potGuess.row, col: potGuess.col
+          },
+          solutionBefore: this.solution.map(row => row.map(col => col))
+        };
+        this.guess.push(guess);
+        console.log(guess);
+        this.emitGuess();
+        await this.animationFrame();
       } else if (!this.verifySolution()) {
         let i = this.guess.length - 1;
         while (i--) {
@@ -316,8 +451,89 @@ export class Picross {
     this.emitter.emit('done');
     // console.log(this);
   }
+  findGuessPosition() {
+    interface IPotGuess {
+      row: number;
+      col: number;
+      prio: number;
+    }
+    const potGuesses: IPotGuess[] = [];
+    // if (rows) {
+    //   this.solution[index][i] = field;
+    // } e
+    for (let row = 0; row < this.size; row++) {
+      let col = 0;
+      let prio = 0;
+      while (col < this.size) {
+        if (this.solution[row][col] !== SolutionField.Unknown) {
+          if (prio > 0) {
+            potGuesses.push({
+              row,
+              col,
+              prio
+            });
+            prio = 0;
+          }
+        } else {
+          prio++;
+        }
+        col++;
+      }
+    }
+    potGuesses.sort((a, b) => {
+      return a.prio - b.prio;
+    });
+    return potGuesses[0];
+  }
+  filterSolutions(solutions: SolutionField[][], rows: boolean, index: number, hints: number[]) {
+    return solutions.filter(solution => {
+      let possible = true;
+      for (let i = 0; i < this.size; i++) {
+        let field = rows ? this.solution[index][i] : this.solution[i][index];
+        if (field === SolutionField.Unknown) {
 
-  generateAllSolutionForRow(hints: number[]) {
+        } else if (field !== solution[i]) {
+          return false;
+        }
+      }
+      let pointer = 0;
+      for (const hint of hints) {
+        while (solution[pointer] === SolutionField.No) {
+          pointer++;
+          if (typeof solution[pointer] === 'undefined') {
+            possible = false;
+            break;
+          }
+        }
+        if (!possible) {
+          break;
+        }
+        for (let i = 0; i < hint; i++) {
+          if (typeof solution[pointer + i] !== 'undefined' && solution[pointer + i] === SolutionField.Yes) {
+
+          } else {
+            possible = false;
+          }
+        }
+        pointer += hint;
+        if (typeof solution[pointer] !== 'undefined' && solution[pointer] === SolutionField.Yes) {
+          possible = false;
+        }
+        pointer++;
+        if (!possible) {
+          break;
+        }
+      }
+      while (typeof solution[pointer] !== 'undefined') {
+        if (solution[pointer] === SolutionField.Yes) {
+          possible = false;
+        }
+        pointer++;
+      }
+      return possible;
+    });
+  }
+  generateAllSolutionForRow(hints: number[]): SolutionField[][] {
     const totalSpace = this.size - hints.reduce((prev, curr) => prev + curr, 0);
     let spacings: number[][] = [];
     for (let spacingIndex = 0; spacingIndex <= hints.length; spacingIndex++) {
@@ -340,7 +556,7 @@ export class Picross {
       return spacing.reduce((prev, curr) => prev + curr, 0) === totalSpace;
     });
     return spacings.map(spacing => {
-      const solution = [];
+      const solution: SolutionField[] = [];
       spacing.forEach((space, spaceIndex) => {
         for (let i = 0; i < space; i++) {
           solution.push(SolutionField.No);

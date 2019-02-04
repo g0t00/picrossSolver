@@ -7,7 +7,7 @@ const webpbn = async () => {
     formData: {
       sid: '',
       go: '1',
-      psize: '2',
+      psize: '3',
       pcolor: '1',
       pmulti: '1',
       save: '1'
@@ -23,7 +23,7 @@ const webpbn = async () => {
   }
   const id = match[1];
   let idPadded = id;
-  // console.log(id, match);
+  console.log(id, match);
   while (idPadded.length < 6) {
     idPadded = '0' + idPadded;
   }
@@ -44,7 +44,7 @@ const webpbn = async () => {
   });
 }
 const puzzleNonogramms_com = async () => {
-  const response = await rp('https://www.puzzle-nonograms.com/?size=5');
+  const response = await rp('https://www.puzzle-nonograms.com/?size=4');
   const match = response.match(/task\s*=\s*'([^']+)'/i);
   if (!match) {
     throw new Error('ASD');

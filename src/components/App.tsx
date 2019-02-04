@@ -1,5 +1,4 @@
 import * as React from 'react';
-import './../assets/scss/App.scss';
 import {PicrossViewer} from './PicrossViewer';
 import {Picross} from '../classes/Picross';
 import {PicrossGenerator} from '../classes/PicrossGenerator';
@@ -22,7 +21,7 @@ export default class App extends React.Component<AppProps, AppState> {
     // // const colHints = [[2, 2], [1, 1, 2], [1, 1, 3], [2, 1, 2, 1], [1, 3, 1], [3, 4], [3, 2], [3, 1], [3, 4], [1, 1, 1]];
     // // const rowHints = [[4], [1, 2, 3]];
     // // const colHints = [[1], [1, 1], [1, 2, 2, 3], [1, 2, 1, 4], [2, 2, 4, 2], [1, 1, 1, 4], [2, 3, 2, 1], [4, 6], [1, 1, 2, 1], [1, 1, 1, 1, 1], [2, 1, 2], [1, 3, 3], [1, 2, 2], [3, 2], [4]];
-    // // const rowHints = [[4], [3], [3, 2], [3, 1], [7], [1, 2, 2], [5, 2, 2], [1, 1], [1, 1, 5], [2, 3, 2], [1, 1, 1], [1, 1, 2, 1], [2, 7, 1], [1, 2, 1, 5], [1, 2, 3, 4]];
+    // // const rowHints = [[4], [3], [3, 2]48, [3, 1], [7], [1, 2, 2], [5, 2, 2], [1, 1], [1, 1, 5], [2, 3, 2], [1, 1, 1], [1, 1, 2, 1], [2, 7, 1], [1, 2, 1, 5], [1, 2, 3, 4]];
     // // const colHints = [[1], [1, 1], [1, 2, 2, 3], [1, 2, 1, 4], [2, 2, 4, 2], [1, 1, 1, 4], [2, 3, 2, 1], [4, 6], [1, 1, 2, 1], [1, 1, 1, 1, 1], [2, 1, 2], [1, 3, 3], [1, 2, 2], [3, 2], [4]];
     // // this.picrossGenerator.generate();
     // // const rowHints = this.picrossGenerator.rowsHints;
@@ -41,17 +40,17 @@ export default class App extends React.Component<AppProps, AppState> {
     // };
   }
   async generateAndSolve() {
-      const {rowHints, colHints} = await webpbn.getRandom();
+      const {rowHints, colHints} = await webpbn.getFromText();
       // this.picrossGenerator.generate();
       // const rowHints = this.picrossGenerator.rowsHints;
       // const colHints = this.picrossGenerator.colsHints;
       const picross = new Picross(rowHints, colHints);
       picross.solve();
-      picross.emitter.on('done', () => {
-        window.setTimeout(() => {
-          this.generateAndSolve();
-        }, 2000);
-      });
+      // picross.emitter.on('done', () => {
+      //   window.setTimeout(() => {
+      //     this.generateAndSolve();
+      //   }, 2000);
+      // });
       this.setState({
         picross,
         solutionFields: this.picrossGenerator.fields

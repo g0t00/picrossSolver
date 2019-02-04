@@ -2,6 +2,9 @@ $bg-color: yellow;
 $border-color: red;
 $border: 1px solid black;
 $border-5er: 2px solid black;
+body {
+  background-color: white;
+}
 .app {
   // font-family: helvetica, arial, sans-serif;
   padding: 2em;
@@ -54,6 +57,9 @@ $border-5er: 2px solid black;
   }
   .header-row-hint {
     margin-right: 2px;
+  }
+  .header-row-hint:nth-child(even) {
+    color: green;
   }
   .field {
     border-bottom: $border;

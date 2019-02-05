@@ -387,42 +387,42 @@ export class Picross {
       // solved = true;
       if (!solved) {
         // guess
-        // let changedSomething = false;
-        // let row = -1;
-        // for (const solutionRow of this.solution)  {
-        //   row++;
-        //   let col = -1;
-        //   for (const solutionCol of solutionRow) {
-        //     col++;
-        //     if (!changedSomething && solutionCol === SolutionField.Unknown) {
-        //       solutionRow[col] = SolutionField.Yes;
-        //       changedSomething = true;
-        //       const guess = {
-        //         guessSolution: true,
-        //         coordinates: {
-        //           row, col
-        //         },
-        //         solutionBefore: this.solution.map(row => row.map(col => col))
-        //       };
-        //       this.guess.push(guess);
-        //       console.log(guess);
-        //       this.emitGuess();
-        //     }
-        //   }
-        // }
-        const potGuess = this.findGuessPosition();
-        this.solution[potGuess.row][potGuess.col] = SolutionField.Yes;
-        const guess = {
-          guessSolution: true,
-          coordinates: {
-            row: potGuess.row, col: potGuess.col
-          },
-          solutionBefore: this.solution.map(row => row.map(col => col))
-        };
-        this.guess.push(guess);
-        console.log(guess);
-        this.emitGuess();
-        await this.animationFrame();
+        let changedSomething = false;
+        let row = -1;
+        for (const solutionRow of this.solution)  {
+          row++;
+          let col = -1;
+          for (const solutionCol of solutionRow) {
+            col++;
+            if (!changedSomething && solutionCol === SolutionField.Unknown) {
+              solutionRow[col] = SolutionField.Yes;
+              changedSomething = true;
+              const guess = {
+                guessSolution: true,
+                coordinates: {
+                  row, col
+                },
+                solutionBefore: this.solution.map(row => row.map(col => col))
+              };
+              this.guess.push(guess);
+              console.log(guess);
+              this.emitGuess();
+            }
+          }
+        }
+        // const potGuess = this.findGuessPosition();
+        // this.solution[potGuess.row][potGuess.col] = SolutionField.Yes;
+        // const guess = {
+        //   guessSolution: true,
+        //   coordinates: {
+        //     row: potGuess.row, col: potGuess.col
+        //   },
+        //   solutionBefore: this.solution.map(row => row.map(col => col))
+        // };
+        // this.guess.push(guess);
+        // console.log(guess);
+        // this.emitGuess();
+        // await this.animationFrame();
       } else if (!this.verifySolution()) {
         let i = this.guess.length - 1;
         while (i--) {
@@ -469,7 +469,7 @@ export class Picross {
           if (prio > 0) {
             potGuesses.push({
               row,
-              col,
+              col: col - 1,
               prio
             });
             prio = 0;

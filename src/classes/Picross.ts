@@ -1,6 +1,7 @@
-import {EventEmitter} from 'events';
 // import RowColWorker = require('worker-loader!./rowColWorker');
+// import {EventEmitter} from 'events';
 import * as bluebird from 'bluebird';
+
 // const delay = (time: number) => new Promise(resolve => window.setTimeout(resolve, time));
 export class ContradictionError extends Error {
   contradiction = true;
@@ -9,45 +10,77 @@ export class ContradictionError extends Error {
     Object.setPrototypeOf(this, ContradictionError.prototype);
   }
 }
+console.log('hello from picross');
+export interface IPicrossState {
+  size: number;
+  solution: Solution;
+  colsHints: IHints;
+  rowsHints: IHints;
+  guess: IGuess[];
+}
 export class Picross {
-  public readonly size: number;
-  public emitter = new EventEmitter();
+  public size: number;
   public solution: SolutionField[][];
+  // public solution: SharedArrayBuffer; new SharedArrayBuffer(1024);
   public guess: IGuess[] = [];
   // private workerPool: RowColWorker[] = [];
   private rowCache = new Map<number, SolutionField[]>();
   private colCache = new Map<number, SolutionField[]>();
   private mostExpensiveRowOrCol = 0;
-  constructor(public rowsHints: IHints, public colsHints: IHints) {
-
-    this.size = Math.max(rowsHints.length, colsHints.length);
+  constructor(public rowsHints: IHints, public colsHints: IHints, public sendMessage: (data: any) => void) {
+    console.log('hello from picross constructor');
+    this.size = Math.max(this.rowsHints.length, this.colsHints.length);
     // for (let i = 0; i < this.size; i++) {
-    //   this.workerPool.push(new RowColWorker());
-    // }
-    while (rowsHints.length < this.size) {
-      rowsHints.push([]);
-    }
-    while (colsHints.length < this.size) {
-      colsHints.push([]);
-    }
-    this.solution = [];
-    for (let x = 0; x < this.size; x++) {
-      const row = [];
-      for (let y = 0; y < this.size; y++) {
-        row.push(SolutionField.Unknown);
+      //   this.workerPool.push(new RowColWorker());
+      // }
+      while (this.rowsHints.length < this.size) {
+        this.rowsHints.push([]);
       }
-      this.solution.push(row);
-    }
-    this.emitGuess();
+      while (this.colsHints.length < this.size) {
+        this.colsHints.push([]);
+      }
+      this.solution = [];
+      for (let x = 0; x < this.size; x++) {
+        const row = [];
+        for (let y = 0; y < this.size; y++) {
+          row.push(SolutionField.Unknown);
+        }
+        this.solution.push(row);
+      }
+      this.emitPartial();
   }
-  emitGuess() {
-    this.emitter.emit('guess', {guess: this.guess.map(({guessSolution, coordinates}) => {
-      return JSON.parse(JSON.stringify({guessSolution, coordinates}));
-    })});
+  emit(obj: any) {
+    this.sendMessage(obj);
+  }
+  emitPartial() {
+    const state: IPicrossState = {
+      size: this.size,
+      solution: this.solution,
+      colsHints: this.colsHints,
+      rowsHints: this.rowsHints,
+      guess: this.guess
+    };
+    this.emit({
+      type: 'partial',
+      state
+    });
   }
   async solveRowsOrColls(rows: boolean, maxCost: number) {
     const rowOrCollHints = rows ? this.rowsHints : this.colsHints;
     await bluebird.map(rowOrCollHints, async (hints, index) => {
+      // if (rows) {
+      //   this.emit({
+      //     type: 'calculating',
+      //     row: index,
+      //     col: -1
+      //   });
+      // } else {
+      //   this.emit({
+      //     type: 'calculating',
+      //     row: -1,
+      //     col: index
+      //   });
+      // }
       let cacheSame = true;
       if (rows) {
         const cache = this.rowCache.get(index);
@@ -75,11 +108,11 @@ export class Picross {
       if (!cacheSame) {
         const evaluation = await this.optimizedRowOrCol(rows, hints, index, maxCost);
         if (evaluation !== false) {
-          if (rows) {
-            this.emitter.emit('calculating', {row: index, col: -1});
-          } else {
-            this.emitter.emit('calculating', {row: -1, col: index});
-          }
+          // if (rows) {
+          //   this.emitPartial();
+          // } else {
+          //   this.emitPartial();
+          // }
           await this.animationFrame();
           let i = -1;
           for (const field of evaluation) {
@@ -98,10 +131,9 @@ export class Picross {
             this.colCache.set(index, evaluation);
           }
         }
-        this.emitter.emit('partial', this.solution);
+        // this.emitPartial();
       }
     }, {concurrency: 1});
-    await this.animationFrame();
   }
   async animationFrame() {
     // return new Promise(resolve => {
@@ -243,7 +275,7 @@ export class Picross {
       while (spaceUsed > totalSpace && running) {
         if (i === hints.length ) {
           // debugger;
-          console.log('Dunso?');
+          // console.log('Dunso?');
           running = false;
           // await this.animationFrame();
         }
@@ -318,12 +350,12 @@ export class Picross {
           if (!disableRow) {
             await this.solveRowsOrColls(true, maxCost);
             // await this.animationFrame();
-            this.emitter.emit('partial', this.solution);
+            this.emitPartial();
           }
           if (!disableCol) {
             await this.solveRowsOrColls(false, maxCost);
             // await this.animationFrame();
-            this.emitter.emit('partial', this.solution);
+            this.emitPartial();
           }
           changed = before !== JSON.stringify(this.solution);
           if (!changed) {
@@ -368,8 +400,7 @@ export class Picross {
               this.guess.splice(0);
             }
           }
-          this.emitter.emit('partial', this.solution);
-          this.emitGuess();
+          this.emitPartial();
         } else {
           throw (e);
         }
@@ -404,7 +435,7 @@ export class Picross {
               };
               this.guess.push(guess);
               console.log(guess);
-              this.emitGuess();
+              this.emitPartial();
             }
           }
         }
@@ -437,16 +468,18 @@ export class Picross {
         } else {
           this.guess.splice(0);
         }
-        this.emitGuess();
+        this.emitPartial();
       }
 
-      this.emitter.emit('partial', this.solution);
       counter++;
     }
     if (!this.verifySolution()) {
       throw new Error('Wrong Solution');
     }
-    this.emitter.emit('done');
+    this.emitPartial();
+    this.emit({
+      type: 'done'
+    });
     // console.log(this);
   }
   findGuessPosition() {

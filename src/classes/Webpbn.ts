@@ -19,7 +19,7 @@ export class Webpbn {
         // console.log('isDir');
         await this.parseDir(dir + '/' + sub.name);
       } else if (sub.isFile() && sub.name.match(/\.non$/) !== null) {
-        console.log('isFile', sub.name);
+        // console.log('isFile', sub.name);
         this.db.push(dir + '/' + sub.name);
       } else {
         // console.log('else');
@@ -28,11 +28,11 @@ export class Webpbn {
     }
   }
   async getFromDb(random = false) {
-    console.log(this.db);
+    // console.log(this.db);
     if (this.db.length === 0) {
       await this.generateDb();
     }
-    console.log(this.db[0]);
+    // console.log(this.db[0]);
     let path;
     if (random) {
       path = this.db[Math.floor(Math.random() * this.db.length)];
@@ -43,25 +43,25 @@ export class Webpbn {
       throw new Error();
     }
     const text = await readFilePromise(path, {encoding: 'utf8'});
-    console.log(text);
+    // console.log(text);
     const match = text.match(/rows\s+([0-9\s,]+)/m);
     if (match === null) {
       throw new Error();
     }
-    const rowHints = match[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
+    const rowsHints = match[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
     const matchCol = text.match(/columns\s+([0-9\s,]+)/m);
     if (matchCol === null) {
       throw new Error();
     }
-    const colHints = matchCol[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
-    console.log({rowHints, colHints}, match);
-    return {rowHints, colHints};
+    const colsHints = matchCol[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
+    console.log({rowsHints, colsHints}, match);
+    return {rowsHints, colsHints};
   }
   async getRandom() {
     const response = await fetch('http://localhost:9615');
-    const {rowHints, colHints} = await response.json();
+    const {rowsHints, colsHints} = await response.json();
 
-    return {rowHints, colHints};
+    return {rowsHints, colsHints};
    }
   getFromText() {
     console.log(__dirname);
@@ -179,15 +179,15 @@ columns
 1 6
 10`;
     const lines = text.split('\n');
-    const rowHints = [];
-    const colHints = [];
+    const rowsHints = [];
+    const colsHints = [];
     let lineI = 3;
     while (typeof lines[lineI] !== 'undefined' && lines[lineI].match(/columns/i) === null) {
       const line = lines[lineI];
       if (line === '0') {
-        rowHints.push([]);
+        rowsHints.push([]);
       } else {
-        rowHints.push(line.split(' ').filter(hint => hint !== '').map(hint => parseInt(hint, 10)));
+        rowsHints.push(line.split(' ').filter(hint => hint !== '').map(hint => parseInt(hint, 10)));
       }
       lineI++;
     }
@@ -195,14 +195,14 @@ columns
     while (typeof lines[lineI] !== 'undefined' && lines[lineI] !== 'columns') {
       const line = lines[lineI];
       if (line === '0') {
-        colHints.push([]);
+        colsHints.push([]);
       } else {
-        colHints.push(line.split(' ').filter(hint => hint !== '').map(hint => parseInt(hint, 10)));
+        colsHints.push(line.split(' ').filter(hint => hint !== '').map(hint => parseInt(hint, 10)));
       }
       lineI++;
     }
     lineI++;
-    return {rowHints, colHints};
+    return {rowsHints, colsHints};
 
   }
 }

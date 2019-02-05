@@ -64,12 +64,15 @@
     "webpack-merge": "^4.1.1"
   },
   "dependencies": {
+    "@babel/preset-react": "^7.0.0",
     "@types/request-promise": "^4.1.42",
     "bluebird": "^3.5.3",
     "cross-env": "^5.2.0",
     "electron": "^4.0.4",
     "electron-builder": "^20.38.5",
     "electron-debug": "^2.1.0",
+    "electron-webpack": "^2.6.1",
+    "electron-webpack-ts": "^3.1.1",
     "react-hot-loader": "^4.6.5",
     "request": "^2.88.0",
     "request-promise": "^4.2.2",

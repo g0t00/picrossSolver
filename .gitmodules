@@ -1,0 +1,3 @@
+[submodule "nonogram-db"]
+	path = nonogram-db
+	url = https://github.com/mikix/nonogram-db

@@ -1,5 +1,5 @@
 import {EventEmitter} from 'events';
-import RowColWorker = require('worker-loader!./rowColWorker');
+// import RowColWorker = require('worker-loader!./rowColWorker');
 import * as bluebird from 'bluebird';
 // const delay = (time: number) => new Promise(resolve => window.setTimeout(resolve, time));
 export class ContradictionError extends Error {
@@ -14,16 +14,16 @@ export class Picross {
   public emitter = new EventEmitter();
   public solution: SolutionField[][];
   public guess: IGuess[] = [];
-  private workerPool: RowColWorker[] = [];
+  // private workerPool: RowColWorker[] = [];
   private rowCache = new Map<number, SolutionField[]>();
   private colCache = new Map<number, SolutionField[]>();
   private mostExpensiveRowOrCol = 0;
   constructor(public rowsHints: IHints, public colsHints: IHints) {
 
     this.size = Math.max(rowsHints.length, colsHints.length);
-    for (let i = 0; i < this.size; i++) {
-      this.workerPool.push(new RowColWorker());
-    }
+    // for (let i = 0; i < this.size; i++) {
+    //   this.workerPool.push(new RowColWorker());
+    // }
     while (rowsHints.length < this.size) {
       rowsHints.push([]);
     }
@@ -329,7 +329,7 @@ export class Picross {
           if (!changed) {
             maxCost += 10;
             console.log('maxCost', maxCost, this.mostExpensiveRowOrCol);
-            if (maxCost < this.mostExpensiveRowOrCol) {
+            if (maxCost <= this.mostExpensiveRowOrCol) {
               changed = true;
             }
           }
@@ -347,12 +347,10 @@ export class Picross {
           }
           if (jumpedOutDirect) {
             let i = this.guess.length - 1;
-            while (i--) {
-              if (this.guess[i].guessSolution === true) {
-                break;
-              }
+            while (this.guess[i].guessSolution) {
+              i--;
             }
-            console.log(i, 'i');
+            console.log(i, 'i', this.guess);
             this.guess[i].guessSolution = false;
             this.solution = this.guess[i].solutionBefore;
             this.solution[this.guess[i].coordinates.row][this.guess[i].coordinates.col] = SolutionField.No;

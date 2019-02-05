@@ -40,17 +40,17 @@ export default class App extends React.Component<AppProps, AppState> {
     // };
   }
   async generateAndSolve() {
-      const {rowHints, colHints} = await webpbn.getFromText();
+      const {rowHints, colHints} = await webpbn.getFromDb(true);
       // this.picrossGenerator.generate();
       // const rowHints = this.picrossGenerator.rowsHints;
       // const colHints = this.picrossGenerator.colsHints;
       const picross = new Picross(rowHints, colHints);
       picross.solve();
-      // picross.emitter.on('done', () => {
-      //   window.setTimeout(() => {
-      //     this.generateAndSolve();
-      //   }, 2000);
-      // });
+      picross.emitter.on('done', () => {
+        window.setTimeout(() => {
+          this.generateAndSolve();
+        }, 2000);
+      });
       this.setState({
         picross,
         solutionFields: this.picrossGenerator.fields

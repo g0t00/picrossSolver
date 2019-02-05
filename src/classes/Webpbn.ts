@@ -1,10 +1,70 @@
+import {readFile, readdir} from 'fs';
+import {promisify} from 'util';
+import {env} from 'process';
+const readFilePromise = promisify(readFile);
+const readdirPromise = promisify(readdir);
+
 export class Webpbn {
+  private db: string[] = [];
+  async generateDb() {
+    const db = env.PWD + '/nonogram-db';
+    await this.parseDir(db);
+  }
+  async parseDir(dir: string) {
+    const subs = await readdirPromise(dir, {withFileTypes: true});
+    for (const sub of subs) {
+      // console.log(sub);
+
+      if (sub.isDirectory()) {
+        // console.log('isDir');
+        await this.parseDir(dir + '/' + sub.name);
+      } else if (sub.isFile() && sub.name.match(/\.non$/) !== null) {
+        console.log('isFile', sub.name);
+        this.db.push(dir + '/' + sub.name);
+      } else {
+        // console.log('else');
+
+      }
+    }
+  }
+  async getFromDb(random = false) {
+    console.log(this.db);
+    if (this.db.length === 0) {
+      await this.generateDb();
+    }
+    console.log(this.db[0]);
+    let path;
+    if (random) {
+      path = this.db[Math.floor(Math.random() * this.db.length)];
+    } else {
+      path = this.db.pop();
+    }
+    if (!path) {
+      throw new Error();
+    }
+    const text = await readFilePromise(path, {encoding: 'utf8'});
+    console.log(text);
+    const match = text.match(/rows\s+([0-9\s,]+)/m);
+    if (match === null) {
+      throw new Error();
+    }
+    const rowHints = match[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
+    const matchCol = text.match(/columns\s+([0-9\s,]+)/m);
+    if (matchCol === null) {
+      throw new Error();
+    }
+    const colHints = matchCol[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
+    console.log({rowHints, colHints}, match);
+    return {rowHints, colHints};
+  }
   async getRandom() {
     const response = await fetch('http://localhost:9615');
     const {rowHints, colHints} = await response.json();
+
     return {rowHints, colHints};
    }
   getFromText() {
+    console.log(__dirname);
 //     const text = `width 35
 // height 40
 // rows

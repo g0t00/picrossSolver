@@ -4,14 +4,15 @@ import {PicrossGenerator} from '../classes/PicrossGenerator';
 import {Picross} from '../classes/Picross';
 import {webpbn} from '../classes/Webpbn';
 import PicrossWorker = require('worker-loader!../classes/PicrossWorker');
-import {IPicrossState} from '../classes/Picross';
+// import {IPicrossState} from '../classes/Picross';
 export interface AppProps {
 }
 export interface AppState {
-  picross: IPicrossState;
+  sharedBuffer: SharedArrayBuffer;
   solutionFields: boolean[][];
-  row: number;
-  col: number;
+  rowsHints: number[][];
+  colsHints: number[][];
+  size: number;
 }
 
 export default class App extends React.Component<AppProps, AppState> {
@@ -43,7 +44,11 @@ export default class App extends React.Component<AppProps, AppState> {
     // };
   }
   async generateAndSolve() {
-      const {rowsHints, colsHints} = await webpbn.getFromDb(false);
+      const {rowsHints, colsHints} = await webpbn.getFromDb(true);
+      this.setState({
+        rowsHints,
+        colsHints
+      });
       // this.picrossGenerator.generate();
       // const rowHints = this.picrossGenerator.rowsHints;
       // const colHints = this.picrossGenerator.colsHints;
@@ -52,22 +57,38 @@ export default class App extends React.Component<AppProps, AppState> {
         throw new Error('BLUB');
       }
       picross.postMessage({type: 'hints', rowsHints, colsHints});
+      const size = Math.max(rowsHints.length, colsHints.length);
+      this.setState({size});
+      console.log('size app', size);
+
       picross.onmessage = event => {
-        if (event.data.type === 'partial') {
-          this.setState({
-            picross: JSON.parse(JSON.stringify(event.data.state))
-          });
-        } else if (event.data.type === 'calculating') {
-          this.setState({
-            row: event.data.row,
-            col: event.data.col
-          });
-        } else if (event.data.type === 'done') {
-          window.setTimeout(() => {
-            this.generateAndSolve();
-          }, 2000);
-        }
-        console.log(event.data.state, event.data.type);
+        console.log(event);
+        this.setState({
+          sharedBuffer: event.data
+        });
+        console.log(event);
+        // if (event.data.type === 'partial') {
+        //   this.setState({
+        //     picross: JSON.parse(JSON.stringify(event.data.state))
+        //   });
+        // } else if (event.data.type === 'calculating') {
+        //   this.setState({
+        //     row: event.data.row,
+        //     col: event.data.col
+        //   });
+        // } else if (event.data.type === 'done') {
+        //   window.setTimeout(() => {
+        //     this.generateAndSolve();
+        //   }, 2000);
+        // }
+        // console.log(event.data.state, event.data.type);
+        const doneFlag = new Uint8Array(event.data, Uint32Array.BYTES_PER_ELEMENT * 2 + size * size, 1);
+
+        const interval = window.setInterval(() => {
+          if (doneFlag[0] === 1) {
+            window.clearInterval(interval);
+          }
+        }, 2000);
       };
       this.setState({
         solutionFields: this.picrossGenerator.fields
@@ -80,20 +101,20 @@ export default class App extends React.Component<AppProps, AppState> {
       // const rowHints = this.picrossGenerator.rowsHints;
       // const colHints = this.picrossGenerator.colsHints;
       const picross = new Picross(rowsHints, colsHints, data => {
-        if (data.type === 'partial') {
-          this.setState({
-            picross: JSON.parse(JSON.stringify(data.state))
-          });
-        } else if (data.type === 'calculating') {
-          this.setState({
-            row: data.row,
-            col: data.col
-          });
-        } else if (data.type === 'done') {
-          window.setTimeout(() => {
-            this.generateAndSolveSync();
-          }, 2000);
-        }
+        // if (data.type === 'partial') {
+        //   this.setState({
+        //     picross: JSON.parse(JSON.stringify(data.state))
+        //   });
+        // } else if (data.type === 'calculating') {
+        //   this.setState({
+        //     row: data.row,
+        //     col: data.col
+        //   });
+        // } else if (data.type === 'done') {
+        //   window.setTimeout(() => {
+        //     this.generateAndSolveSync();
+        //   }, 2000);
+        // }
         console.log(data.state, data.type);
       });
       this.setState({
@@ -104,16 +125,16 @@ export default class App extends React.Component<AppProps, AppState> {
   }
     async componentDidMount() {
       console.log('componentDidMount');
-      await this.generateAndSolveSync();
+      await this.generateAndSolve();
 
     }
     render() {
-      if (this.state && this.state.picross) {
+      if (this.state && this.state.sharedBuffer) {
         return (
           <div className='app'>
           <br/>
 
-          <PicrossViewer picross={this.state.picross} row = {this.state.row} col = {this.state.col}/>
+          <PicrossViewer sharedBuffer={this.state.sharedBuffer} size = {this.state.size} rowsHints = {this.state.rowsHints} colsHints = {this.state.colsHints} />
           <button onClick = {() => this.generateAndSolve()}>New</button>
           </div>
         );

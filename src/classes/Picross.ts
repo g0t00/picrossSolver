@@ -13,74 +13,81 @@ export class ContradictionError extends Error {
 console.log('hello from picross');
 export interface IPicrossState {
   size: number;
-  solution: Solution;
+  solution: Uint8Array;
   colsHints: IHints;
   rowsHints: IHints;
   guess: IGuess[];
 }
+export enum SolutionField {
+  No,
+  Yes,
+  Unknown
+}
 export class Picross {
   public size: number;
-  public solution: SolutionField[][];
+  public solution: Uint8Array;
+  public doneFlag: Uint8Array;
+  public calculatingRow: Uint32Array;
+  public calculatingCol: Uint32Array;
+  private sharedBuffer: SharedArrayBuffer;
   // public solution: SharedArrayBuffer; new SharedArrayBuffer(1024);
   public guess: IGuess[] = [];
   // private workerPool: RowColWorker[] = [];
   private rowCache = new Map<number, SolutionField[]>();
   private colCache = new Map<number, SolutionField[]>();
   private mostExpensiveRowOrCol = 0;
+  getPos(row: number, col: number) {
+    return row * this.size + col;
+  }
   constructor(public rowsHints: IHints, public colsHints: IHints, public sendMessage: (data: any) => void) {
-    console.log('hello from picross constructor');
     this.size = Math.max(this.rowsHints.length, this.colsHints.length);
-    // for (let i = 0; i < this.size; i++) {
-      //   this.workerPool.push(new RowColWorker());
-      // }
+    console.log('hello from picross constructor', this.size);
+    this.sharedBuffer = new SharedArrayBuffer(this.size * this.size + 1 + 2 * Uint32Array.BYTES_PER_ELEMENT);
+    this.sendMessage(this.sharedBuffer);
       while (this.rowsHints.length < this.size) {
         this.rowsHints.push([]);
       }
       while (this.colsHints.length < this.size) {
         this.colsHints.push([]);
       }
-      this.solution = [];
+      this.solution = new Uint8Array(this.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT * 2, this.size * this.size);
+      this.doneFlag = new Uint8Array(this.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT * 2 + this.size * this.size, 1);
+      this.calculatingRow = new Uint32Array(this.sharedBuffer, 0, 4);
+      this.calculatingCol = new Uint32Array(this.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT, 4);
       for (let x = 0; x < this.size; x++) {
-        const row = [];
         for (let y = 0; y < this.size; y++) {
-          row.push(SolutionField.Unknown);
+          this.solution[this.getPos(x, y)] = SolutionField.Unknown;
         }
-        this.solution.push(row);
       }
       this.emitPartial();
   }
-  emit(obj: any) {
-    this.sendMessage(obj);
+  emit(_: any) {
+    // this.sendMessage(obj);
   }
   emitPartial() {
-    const state: IPicrossState = {
-      size: this.size,
-      solution: this.solution,
-      colsHints: this.colsHints,
-      rowsHints: this.rowsHints,
-      guess: this.guess
-    };
-    this.emit({
-      type: 'partial',
-      state
-    });
+    // const state: IPicrossState = {
+    //   size: this.size,
+    //   solution: this.solution,
+    //   colsHints: this.colsHints,
+    //   rowsHints: this.rowsHints,
+    //   guess: this.guess
+    // };
+    // this.emit({
+    //   type: 'partial',
+    //   state
+    // });
+    // this.sendMessage(this.sharedBuffer);
   }
   async solveRowsOrColls(rows: boolean, maxCost: number) {
     const rowOrCollHints = rows ? this.rowsHints : this.colsHints;
     await bluebird.map(rowOrCollHints, async (hints, index) => {
-      // if (rows) {
-      //   this.emit({
-      //     type: 'calculating',
-      //     row: index,
-      //     col: -1
-      //   });
-      // } else {
-      //   this.emit({
-      //     type: 'calculating',
-      //     row: -1,
-      //     col: index
-      //   });
-      // }
+      if (rows) {
+        this.calculatingCol[0] = -1;
+        this.calculatingRow[0] = index;
+      } else {
+        this.calculatingCol[0] = index;
+        this.calculatingRow[0] = -1;
+      }
       let cacheSame = true;
       if (rows) {
         const cache = this.rowCache.get(index);
@@ -88,7 +95,7 @@ export class Picross {
           cacheSame = false;
         } else {
           for (let i = 0; i < this.size; i++) {
-            if (cache[i] !== this.solution[index][i]) {
+            if (cache[i] !== this.solution[this.getPos(index, i)]) {
               cacheSame = false;
             }
           }
@@ -99,7 +106,7 @@ export class Picross {
           cacheSame = false;
         } else {
           for (let i = 0; i < this.size; i++) {
-            if (cache[i] !== this.solution[i][index]) {
+            if (cache[i] !== this.solution[this.getPos(i, index)]) {
               cacheSame = false;
             }
           }
@@ -119,9 +126,9 @@ export class Picross {
             i++;
             if (field !== SolutionField.Unknown) {
               if (rows) {
-                this.solution[index][i] = field;
+                this.solution[this.getPos(index, i)] = field;
               } else {
-                this.solution[i][index] = field;
+                this.solution[this.getPos(i, index)] = field;
               }
             }
           }
@@ -205,9 +212,9 @@ export class Picross {
     const baseLine: SolutionField[] = [];
     for (let i = 0; i < this.size; i++) {
       if (rows) {
-        baseLine.push(this.solution[index][i]);
+        baseLine.push(this.solution[this.getPos(index, i)]);
       } else {
-        baseLine.push(this.solution[i][index]);
+        baseLine.push(this.solution[this.getPos(i, index)]);
       }
     }
     if (cost > maxCost) {
@@ -220,7 +227,7 @@ export class Picross {
       }
       return false;
     }
-    console.log(totalSpace, hints.length);
+    // console.log(totalSpace, hints.length);
     if (hints.length === 0) {
       return Array(this.size).fill(SolutionField.No);
     }
@@ -300,14 +307,14 @@ export class Picross {
       let colI = 0;
       const hints = this.rowsHints[rowI];
       for (const hint of hints) {
-        while (colI < this.size && this.solution[rowI][colI] === SolutionField.No) {
+        while (colI < this.size && this.solution[this.getPos(rowI, colI)] === SolutionField.No) {
           colI++;
         }
         if (colI === this.size) {
           return false;
         }
         for (let i = 0; i < hint; i++) {
-          if (colI === this.size || this.solution[rowI][colI] !== SolutionField.Yes) {
+          if (colI === this.size || this.solution[this.getPos(rowI, colI)] !== SolutionField.Yes) {
             return false;
           }
           colI++;
@@ -318,14 +325,14 @@ export class Picross {
       let rowI = 0;
       const hints = this.colsHints[colI];
       for (const hint of hints) {
-        while (rowI < this.size && this.solution[rowI][colI] === SolutionField.No) {
+        while (rowI < this.size && this.solution[this.getPos(rowI, colI)] === SolutionField.No) {
           rowI++;
         }
         if (rowI === this.size) {
           return false;
         }
         for (let i = 0; i < hint; i++) {
-          if (rowI === this.size || this.solution[rowI][colI] !== SolutionField.Yes) {
+          if (rowI === this.size || this.solution[this.getPos(rowI, colI)] !== SolutionField.Yes) {
             return false;
           }
           rowI++;
@@ -341,10 +348,12 @@ export class Picross {
     let maxCost = 30;
     while (!solved) {
       let changed = true;
+      let changedLast = true;
       let jumpedOutDirect = true;
       maxCost = 10;
       try {
-        while (changed) {
+        while (changed || changedLast) {
+          changedLast = changed;
           changed = false;
           let before = JSON.stringify(this.solution);
           if (!disableRow) {
@@ -372,8 +381,8 @@ export class Picross {
         }
       } catch (e) {
         if (e.contradiction) {
-          console.log('found irregular, jumping back', e);
-          console.log(`guess length: ${this.guess.length} typeof: ${typeof this.guess}`);
+          // console.log('found irregular, jumping back', e);
+          // console.log(`guess length: ${this.guess.length} typeof: ${typeof this.guess}`);
           if (this.guess.length === 0) {
             throw new Error('found irregular, no guess');
           }
@@ -385,7 +394,7 @@ export class Picross {
             console.log(i, 'i', this.guess);
             this.guess[i].guessSolution = false;
             this.solution = this.guess[i].solutionBefore;
-            this.solution[this.guess[i].coordinates.row][this.guess[i].coordinates.col] = SolutionField.No;
+            this.solution[this.getPos(this.guess[i].coordinates.row, this.guess[i].coordinates.col)] = SolutionField.No;
             if (i > 0) {
               this.guess.splice(i + 1);
             } else {
@@ -395,7 +404,8 @@ export class Picross {
             const guess = this.guess[this.guess.length - 1];
             guess.guessSolution = false;
             this.solution = guess.solutionBefore;
-            this.solution[guess.coordinates.row][guess.coordinates.col] = SolutionField.No;
+            this.solution[this.getPos(guess.coordinates.row, guess.coordinates.col)] = SolutionField.No;
+
             if (this.guess.length === 1) {
               this.guess.splice(0);
             }
@@ -406,9 +416,9 @@ export class Picross {
         }
       }
       solved = true;
-      for (const solutionRow of this.solution) {
-        for (const solutionCol of solutionRow) {
-          if (solutionCol === SolutionField.Unknown) {
+      for (let row = 0; row < this.size; row++) {
+        for (let col = 0; col < this.size; col++) {
+          if (this.solution[this.getPos(row, col)] === SolutionField.Unknown) {
             solved = false;
           }
         }
@@ -417,21 +427,17 @@ export class Picross {
       if (!solved) {
         // guess
         let changedSomething = false;
-        let row = -1;
-        for (const solutionRow of this.solution)  {
-          row++;
-          let col = -1;
-          for (const solutionCol of solutionRow) {
-            col++;
-            if (!changedSomething && solutionCol === SolutionField.Unknown) {
-              solutionRow[col] = SolutionField.Yes;
+        for (let row = 0; row < this.size; row++)  {
+          for (let col = 0; col < this.size; col++)  {
+            if (!changedSomething && this.solution[this.getPos(row, col)] === SolutionField.Unknown) {
+              this.solution[this.getPos(row, col)] = SolutionField.Yes;
               changedSomething = true;
               const guess = {
                 guessSolution: true,
                 coordinates: {
                   row, col
                 },
-                solutionBefore: this.solution.map(row => row.map(col => col))
+                solutionBefore: this.solution.slice()
               };
               this.guess.push(guess);
               console.log(guess);
@@ -461,8 +467,10 @@ export class Picross {
         }
         console.log(i, 'i');
         this.guess[i].guessSolution = false;
-        this.solution = this.guess[i].solutionBefore;
-        this.solution[this.guess[i].coordinates.row][this.guess[i].coordinates.col] = SolutionField.No;
+        for (let x = 0; x < this.size * this.size; x++) {
+          this.solution[x] = this.guess[i].solutionBefore[x];
+        }
+        this.solution[this.getPos(this.guess[i].coordinates.row, this.guess[i].coordinates.col)] = SolutionField.No;
         if (i > 0) {
           this.guess.splice(i + 1);
         } else {
@@ -476,6 +484,7 @@ export class Picross {
     if (!this.verifySolution()) {
       throw new Error('Wrong Solution');
     }
+    this.doneFlag[0] = 1;
     this.emitPartial();
     this.emit({
       type: 'done'
@@ -496,7 +505,7 @@ export class Picross {
       let col = 0;
       let prio = 0;
       while (col < this.size) {
-        if (this.solution[row][col] !== SolutionField.Unknown) {
+        if (this.solution[this.getPos(row, col)] !== SolutionField.Unknown) {
           if (prio > 0) {
             potGuesses.push({
               row,
@@ -520,7 +529,7 @@ export class Picross {
     return solutions.filter(solution => {
       let possible = true;
       for (let i = 0; i < this.size; i++) {
-        let field = rows ? this.solution[index][i] : this.solution[i][index];
+        let field = rows ? this.solution[this.getPos(index, i)] : this.solution[this.getPos(i, index)];
         if (field === SolutionField.Unknown) {
 
         } else if (field !== solution[i]) {
@@ -603,11 +612,7 @@ export class Picross {
     });
   }
 }
-export enum SolutionField {
-  No,
-  Yes,
-  Unknown
-}
+
 export type Solution = SolutionField[][];
 export interface ICoordinate {
   col: number;
@@ -616,7 +621,7 @@ export interface ICoordinate {
 export interface IGuess {
   guessSolution: boolean;
   coordinates: ICoordinate;
-  solutionBefore: Solution;
+  solutionBefore: Uint8Array;
 }
 export interface IGuessWithoutSolutionBefore {
   guessSolution: boolean;

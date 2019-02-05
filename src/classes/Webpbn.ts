@@ -6,6 +6,7 @@ const readdirPromise = promisify(readdir);
 
 export class Webpbn {
   private db: string[] = [];
+  private dbGenerated = false;
   async generateDb() {
     const db = env.PWD + '/nonogram-db';
     await this.parseDir(db);
@@ -27,15 +28,20 @@ export class Webpbn {
       }
     }
   }
-  async getFromDb(random = false) {
+  async getFromDb(random = false, maxSize = Infinity): Promise<{rowsHints: number[][], colsHints: number[][]}> {
     // console.log(this.db);
     if (this.db.length === 0) {
-      await this.generateDb();
+      if (!this.dbGenerated) {
+        await this.generateDb();
+        this.dbGenerated = true;
+      } else {
+        throw new Error('done with db');
+      }
     }
     // console.log(this.db[0]);
     let path;
     if (random) {
-      path = this.db[Math.floor(Math.random() * this.db.length)];
+      path = this.db.splice(Math.floor(Math.random() * this.db.length), 1)[0];
     } else {
       path = this.db.pop();
     }
@@ -54,8 +60,17 @@ export class Webpbn {
       throw new Error();
     }
     const colsHints = matchCol[1].trim().split('\n').map(row => row.split(',').map(hint => parseInt(hint, 10)));
-    console.log({rowsHints, colsHints}, match);
-    return {rowsHints, colsHints};
+    console.log(rowsHints, colsHints);
+    while (rowsHints.length < colsHints.length) {
+      rowsHints.push([]);
+    }
+    while (rowsHints.length > colsHints.length) {
+      colsHints.push([]);
+    }
+    if (rowsHints.length <= maxSize && colsHints.length <= maxSize) {
+      return {rowsHints, colsHints};
+    }
+    return await this.getFromDb(random, maxSize);
   }
   async getRandom() {
     const response = await fetch('http://localhost:9615');

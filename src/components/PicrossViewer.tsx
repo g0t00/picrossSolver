@@ -115,9 +115,13 @@ export class PicrossViewer extends React.Component<PicrossViewerProps, PicrossVi
     return rows;
   }
   render() {
-    return (<div className='picross-viewer'>
-    {this.renderRowHeader()}
-    {this.renderRows()}
-    </div>);
+    try {
+      return (<div className='picross-viewer'>
+      {this.renderRowHeader()}
+      {this.renderRows()}
+      </div>);
+    } catch (e) {
+      return <div>Yolo{JSON.stringify(e)}</div>;
+    }
   }
 }

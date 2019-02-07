@@ -39,7 +39,6 @@ export class Picross {
   static generateArrays(buffer: SharedArrayBuffer, size: number) {
     const calculatingRow = new Uint32Array(buffer, 0, 4);
     const calculatingCol = new Uint32Array(buffer, Uint32Array.BYTES_PER_ELEMENT, 4);
-    console.log(2 * size * size * Int32Array.BYTES_PER_ELEMENT, buffer.length);
     const guessCoordinates = new Int8Array(buffer, 2 * Uint32Array.BYTES_PER_ELEMENT, 2 * size * size * Int8Array.BYTES_PER_ELEMENT);
     const solution = new Uint8Array(buffer, Uint32Array.BYTES_PER_ELEMENT * 2 + 2 * size * size * Int8Array.BYTES_PER_ELEMENT, size * size);
     const doneFlag = new Uint8Array(buffer, Uint32Array.BYTES_PER_ELEMENT * 2 + 2 * size * size * Int8Array.BYTES_PER_ELEMENT + size * size, 1);
@@ -199,7 +198,7 @@ export class Picross {
         changed = true;
       }
     }
-    i = this.size - 1;
+    i = baseLine.length - 1;
     while (baseLine[i] === SolutionField.No) {
       i--;
     }
@@ -223,9 +222,10 @@ export class Picross {
     return {changed, baseLine};
   }
   async optimizedRowOrCol(rows: boolean, hints: number[], index: number, maxCost: number) {
-    const totalSpace = this.size - hints.reduce((prev, curr) => prev + curr, 0);
-    const cost = totalSpace * hints.length;
-    const baseLine: SolutionField[] = [];
+    if (hints.length === 0) {
+      return Array(this.size).fill(SolutionField.No);
+    }
+    let baseLine: SolutionField[] = [];
     for (let i = 0; i < this.size; i++) {
       if (rows) {
         baseLine.push(this.solution[this.getPos(index, i)]);
@@ -233,6 +233,53 @@ export class Picross {
         baseLine.push(this.solution[this.getPos(i, index)]);
       }
     }
+    let offsetStart = 0;
+    let offsetEnd = 0;
+    offsetStartLoop: while (offsetStart < this.size - 1) {
+      if (baseLine[offsetStart] && baseLine[offsetStart] === SolutionField.No) {
+        offsetStart++;
+      } else {
+        for (let i = 0; i < hints[0]; i++) {
+          if (baseLine[offsetStart + i] !== SolutionField.Yes) {
+            break offsetStartLoop;
+          }
+        }
+        if (baseLine[offsetStart + hints[0] + 1] !== SolutionField.No) {
+          break offsetStartLoop;
+        }
+        offsetStart += hints[0];
+        hints = hints.slice(1);
+      }
+    }
+    offsetEndLoop: while (offsetEnd < this.size - 1 - offsetStart) {
+      if (baseLine[baseLine.length - 1 - offsetEnd] === SolutionField.No) {
+        offsetEnd++;
+      } else {
+        for (let i = 0; i < hints[hints.length - 1]; i++) {
+          if (baseLine[baseLine.length - 1 - offsetEnd - i] !== SolutionField.Yes) {
+            break offsetEndLoop;
+          }
+        }
+        if (baseLine[baseLine.length - 1 - offsetEnd + hints[hints.length - 1] - 1] !== SolutionField.No) {
+          break offsetEndLoop;
+        }
+        offsetEnd += hints[hints.length - 1];
+        hints = hints.slice(0, hints.length - 1);
+      }
+    }
+    if (hints.length === 0) {
+      for (let i = offsetStart; i < baseLine.length - offsetEnd; i++) {
+        baseLine[i] = SolutionField.No;
+      }
+      return baseLine;
+    }
+    const startDone = baseLine.slice(0, offsetStart);
+    const endDone = baseLine.slice(baseLine.length - offsetEnd);
+    baseLine = baseLine.slice(offsetStart, baseLine.length - offsetEnd);
+    let sizeWithOffset = this.size - offsetStart - offsetEnd;
+    const totalSpace = sizeWithOffset - hints.reduce((prev, curr) => prev + curr, 0);
+    const cost = totalSpace * hints.length;
+
     if (cost > maxCost) {
       if (this.mostExpensiveRowOrCol < cost) {
         this.mostExpensiveRowOrCol = cost;
@@ -244,9 +291,6 @@ export class Picross {
       return false;
     }
     // console.log(totalSpace, hints.length);
-    if (hints.length === 0) {
-      return Array(this.size).fill(SolutionField.No);
-    }
     let spacings: number[] = [];
     for (let i = 0; i < hints.length; i++) {
       spacings.push(i === 0 ? 0 : 1);
@@ -254,7 +298,7 @@ export class Picross {
     let running = true;
     let firstSolution: SolutionField[]|null = null;
     while (running) {
-      const solution = Array(this.size).fill(SolutionField.No);
+      const solution = Array(sizeWithOffset).fill(SolutionField.No);
       let offset = 0;
       let conflict = false;
       for (const [spaceIndex, space] of spacings.entries()) {
@@ -273,19 +317,19 @@ export class Picross {
           offset++;
         }
       }
-      for (let i = offset; i < this.size; i++) {
+      for (let i = offset; i < sizeWithOffset; i++) {
         if (baseLine[i] === SolutionField.Yes) {
           conflict = true;
         }
       }
-      if (solution.length !== this.size) {
+      if (solution.length !== sizeWithOffset) {
         throw new Error('eh');
       }
       if (!conflict) {
         if (firstSolution === null) {
           firstSolution = this.hardCopyArray(solution);
         } else {
-          for (let i = 0; i < this.size; i++) {
+          for (let i = 0; i < sizeWithOffset; i++) {
             if (firstSolution[i] !== solution[i]) {
               firstSolution[i] = SolutionField.Unknown;
             }
@@ -316,7 +360,11 @@ export class Picross {
     if (firstSolution === null) {
       throw new ContradictionError('asd5');
     }
+    console.log(offsetStart, offsetEnd, 'asd');
+    firstSolution.push(... endDone);
+    firstSolution.unshift(... startDone);
     return firstSolution;
+    // return [Array(offsetStart).fill(SolutionField.No), ...firstSolution, Array(offsetEnd).fill(SolutionField.No)];
   }
   verifySolution(): boolean {
     for (let rowI = 0; rowI < this.size; rowI++) {

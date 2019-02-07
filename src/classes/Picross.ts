@@ -29,12 +29,22 @@ export class Picross {
   public doneFlag: Uint8Array;
   public calculatingRow: Uint32Array;
   public calculatingCol: Uint32Array;
+  public guessCoordinates: Int8Array;
   private sharedBuffer: SharedArrayBuffer;
   // public solution: SharedArrayBuffer; new SharedArrayBuffer(1024);
   public guess: IGuess[] = [];
   // private workerPool: RowColWorker[] = [];
   private rowCache = new Map<number, SolutionField[]>();
   private colCache = new Map<number, SolutionField[]>();
+  static generateArrays(buffer: SharedArrayBuffer, size: number) {
+    const calculatingRow = new Uint32Array(buffer, 0, 4);
+    const calculatingCol = new Uint32Array(buffer, Uint32Array.BYTES_PER_ELEMENT, 4);
+    console.log(2 * size * size * Int32Array.BYTES_PER_ELEMENT, buffer.length);
+    const guessCoordinates = new Int8Array(buffer, 2 * Uint32Array.BYTES_PER_ELEMENT, 2 * size * size * Int8Array.BYTES_PER_ELEMENT);
+    const solution = new Uint8Array(buffer, Uint32Array.BYTES_PER_ELEMENT * 2 + 2 * size * size * Int8Array.BYTES_PER_ELEMENT, size * size);
+    const doneFlag = new Uint8Array(buffer, Uint32Array.BYTES_PER_ELEMENT * 2 + 2 * size * size * Int8Array.BYTES_PER_ELEMENT + size * size, 1);
+    return {solution, doneFlag, calculatingRow, calculatingCol, guessCoordinates};
+  }
   private mostExpensiveRowOrCol = 0;
   getPos(row: number, col: number) {
     return row * this.size + col;
@@ -42,7 +52,7 @@ export class Picross {
   constructor(public rowsHints: IHints, public colsHints: IHints, public sendMessage: (data: any) => void) {
     this.size = Math.max(this.rowsHints.length, this.colsHints.length);
     console.log('hello from picross constructor', this.size);
-    this.sharedBuffer = new SharedArrayBuffer(this.size * this.size + 1 + 2 * Uint32Array.BYTES_PER_ELEMENT);
+    this.sharedBuffer = new SharedArrayBuffer(this.size * this.size + 1 + 2 * Uint32Array.BYTES_PER_ELEMENT + 2 * this.size * this.size * Int8Array.BYTES_PER_ELEMENT);
     this.sendMessage(this.sharedBuffer);
       while (this.rowsHints.length < this.size) {
         this.rowsHints.push([]);
@@ -50,14 +60,20 @@ export class Picross {
       while (this.colsHints.length < this.size) {
         this.colsHints.push([]);
       }
-      this.solution = new Uint8Array(this.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT * 2, this.size * this.size);
-      this.doneFlag = new Uint8Array(this.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT * 2 + this.size * this.size, 1);
-      this.calculatingRow = new Uint32Array(this.sharedBuffer, 0, 4);
-      this.calculatingCol = new Uint32Array(this.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT, 4);
+      ({
+        solution: this.solution,
+        doneFlag: this.doneFlag,
+        calculatingRow: this.calculatingRow,
+        calculatingCol: this.calculatingCol,
+        guessCoordinates: this.guessCoordinates
+      } = Picross.generateArrays(this.sharedBuffer, this.size));
       for (let x = 0; x < this.size; x++) {
         for (let y = 0; y < this.size; y++) {
           this.solution[this.getPos(x, y)] = SolutionField.Unknown;
         }
+      }
+      for (let i = 0; i < this.guessCoordinates.length; i++) {
+        this.guessCoordinates[i] = -1;
       }
       this.emitPartial();
   }
@@ -439,7 +455,9 @@ export class Picross {
                 },
                 solutionBefore: this.solution.slice()
               };
-              this.guess.push(guess);
+              const index = this.guess.push(guess);
+              this.guessCoordinates[2 * index] = row;
+              this.guessCoordinates[2 * index + 1] = col;
               console.log(guess);
               this.emitPartial();
             }

@@ -1,9 +1,14 @@
 import * as React from 'react';
-import {SolutionField} from '../classes/Picross';
+import {SolutionField, Picross} from '../classes/Picross';
+interface IGuessCoordinate {
+  col: number;
+  row: number;
+}
 export interface PicrossViewerState {
   solution: SolutionField[];
   calculatingRow: number;
   calculatingCol: number;
+  guessCoordinates: IGuessCoordinate[];
 }
 export interface PicrossViewerProps {
   sharedBuffer: SharedArrayBuffer;
@@ -18,7 +23,8 @@ export class PicrossViewer extends React.Component<PicrossViewerProps, PicrossVi
     this.state = {
       solution: [],
       calculatingRow: -1,
-      calculatingCol: -1
+      calculatingCol: -1,
+      guessCoordinates: []
     };
     // this.props.picross.emitter.on('partial', solution => {
     //   this.setState({solution});
@@ -43,16 +49,29 @@ export class PicrossViewer extends React.Component<PicrossViewerProps, PicrossVi
   createSolution() {
     try {
       const solution = [];
-      const solutionBuffer = new Uint8Array(this.props.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT * 2, this.props.size * this.props.size);
+      let {
+        solution: solutionBuffer,
+        calculatingRow: calculatingRowBuffer,
+        calculatingCol: calculatingColBuffer,
+        guessCoordinates: guessCoordinatesBuffer
+      } = Picross.generateArrays(this.props.sharedBuffer, this.props.size);
       for (let i = 0; i < solutionBuffer.length; i++) {
         solution.push(solutionBuffer[i]);
       }
-      const calculatingRow = new Uint32Array(this.props.sharedBuffer, 0, 4)[0];
-      const calculatingCol = new Uint32Array(this.props.sharedBuffer, Uint32Array.BYTES_PER_ELEMENT, 4)[0];
+      let i = 0;
+      const guessCoordinates: IGuessCoordinate[] = [];
+      while (guessCoordinatesBuffer[i] !== -1) {
+        guessCoordinates.push({
+          row: guessCoordinatesBuffer[i],
+          col: guessCoordinatesBuffer[i + 1]
+        });
+        i += 2;
+      }
       this.setState({
         solution,
-        calculatingRow,
-        calculatingCol
+        calculatingRow: calculatingRowBuffer[0],
+        calculatingCol: calculatingColBuffer[0],
+        guessCoordinates
       });
     } catch (e) {
       console.error(e);
@@ -97,14 +116,14 @@ export class PicrossViewer extends React.Component<PicrossViewerProps, PicrossVi
         let className = 'field';
         if (solutionField === SolutionField.Yes) {
           className += ' field-yes';
-          // if (this.props.picross.guess.find(guess => guess.coordinates.col === col && guess.coordinates.row === rowIndex && guess.guessSolution)) {
-          //   className += ' field-yes-guess';
-          // }
+          if (this.state.guessCoordinates.find(guess => guess.col === col && guess.row === rowIndex)) {
+            className += ' field-yes-guess';
+          }
         } else if (solutionField === SolutionField.No) {
           className += ' field-no';
-          // if (this.props.picross.guess.find(guess => guess.coordinates.col === col && guess.coordinates.row === rowIndex && guess.guessSolution === false)) {
-          //   className += ' field-no-guess';
-          // }
+          if (this.state.guessCoordinates.find(guess => guess.col === col && guess.row === rowIndex)) {
+            className += ' field-no-guess';
+          }
         }
         row.push(<div className={className} key={col}></div>);
 

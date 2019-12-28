@@ -12,7 +12,7 @@ ctx.onmessage = event => {
   } else if (event.data.type === 'solve') {
     // console.error('test');
     try {
-      picross.solve();
+      picross.solveWithJobs();
     } catch (e) {
       console.error(e);
     }

@@ -221,7 +221,7 @@ export class Picross {
     }
     return {changed, baseLine};
   }
-  async optimizedRowOrCol(rows: boolean, hints: number[], index: number, maxCost: number) {
+  async optimizedRowOrCol(rows: boolean, hints: number[], index: number, maxCost: number): Promise<false|SolutionField[]> {
     if (hints.length === 0) {
       return Array(this.size).fill(SolutionField.No);
     }
@@ -235,38 +235,38 @@ export class Picross {
     }
     let offsetStart = 0;
     let offsetEnd = 0;
-    offsetStartLoop: while (offsetStart < this.size - 1) {
-      if (baseLine[offsetStart] && baseLine[offsetStart] === SolutionField.No) {
-        offsetStart++;
-      } else {
-        for (let i = 0; i < hints[0]; i++) {
-          if (baseLine[offsetStart + i] !== SolutionField.Yes) {
-            break offsetStartLoop;
-          }
-        }
-        if (baseLine[offsetStart + hints[0] + 1] !== SolutionField.No) {
-          break offsetStartLoop;
-        }
-        offsetStart += hints[0];
-        hints = hints.slice(1);
-      }
-    }
-    offsetEndLoop: while (offsetEnd < this.size - 1 - offsetStart) {
-      if (baseLine[baseLine.length - 1 - offsetEnd] === SolutionField.No) {
-        offsetEnd++;
-      } else {
-        for (let i = 0; i < hints[hints.length - 1]; i++) {
-          if (baseLine[baseLine.length - 1 - offsetEnd - i] !== SolutionField.Yes) {
-            break offsetEndLoop;
-          }
-        }
-        if (baseLine[baseLine.length - 1 - offsetEnd + hints[hints.length - 1] - 1] !== SolutionField.No) {
-          break offsetEndLoop;
-        }
-        offsetEnd += hints[hints.length - 1];
-        hints = hints.slice(0, hints.length - 1);
-      }
-    }
+    // offsetStartLoop: while (offsetStart < this.size - 1) {
+    //   if (baseLine[offsetStart] && baseLine[offsetStart] === SolutionField.No) {
+    //     offsetStart++;
+    //   } else {
+    //     for (let i = 0; i < hints[0]; i++) {
+    //       if (baseLine[offsetStart + i] !== SolutionField.Yes) {
+    //         break offsetStartLoop;
+    //       }
+    //     }
+    //     if (baseLine[offsetStart + hints[0] + 1] !== SolutionField.No) {
+    //       break offsetStartLoop;
+    //     }
+    //     offsetStart += hints[0];
+    //     hints = hints.slice(1);
+    //   }
+    // }
+    // offsetEndLoop: while (offsetEnd < this.size - 1 - offsetStart) {
+    //   if (baseLine[baseLine.length - 1 - offsetEnd] === SolutionField.No) {
+    //     offsetEnd++;
+    //   } else {
+    //     for (let i = 0; i < hints[hints.length - 1]; i++) {
+    //       if (baseLine[baseLine.length - 1 - offsetEnd - i] !== SolutionField.Yes) {
+    //         break offsetEndLoop;
+    //       }
+    //     }
+    //     if (baseLine[baseLine.length - 1 - offsetEnd + hints[hints.length - 1] - 1] !== SolutionField.No) {
+    //       break offsetEndLoop;
+    //     }
+    //     offsetEnd += hints[hints.length - 1];
+    //     hints = hints.slice(0, hints.length - 1);
+    //   }
+    // }
     if (hints.length === 0) {
       for (let i = offsetStart; i < baseLine.length - offsetEnd; i++) {
         baseLine[i] = SolutionField.No;
@@ -404,6 +404,78 @@ export class Picross {
       }
     }
     return true;
+  }
+  async solveWithJobs() {
+    debugger;
+    enum JobType {
+      Row,
+      Col
+    }
+    interface Job {
+        jobType: JobType;
+        index: number;
+        priority: number;
+    }
+    let running = true;
+    let rowPriorities = Array(this.size).fill(1);
+    let colPriorities = Array(this.size).fill(1);
+    while (running) {
+      let job: Job = {
+        jobType: JobType.Row,
+        index: 0,
+        priority: 0
+      };
+      for (const [index, priority] of rowPriorities.entries()) {
+        if (priority > job.priority) {
+          job.jobType = JobType.Row;
+          job.index = index;
+          job.priority = priority;
+        }
+      }
+      for (const [index, priority] of colPriorities.entries()) {
+        if (priority > job.priority) {
+          job.jobType = JobType.Col;
+          job.index = index;
+          job.priority = priority;
+        }
+      }
+      if (job.priority === 0) {
+        running = false;
+        break;
+      }
+      if (job.jobType === JobType.Row) {
+        rowPriorities[job.index] = 0;
+      } else {
+        colPriorities[job.index] = 0;
+      }
+      if (job.jobType === JobType.Row) {
+        this.calculatingCol[0] = -1;
+        this.calculatingRow[0] = job.index;
+      } else {
+        this.calculatingCol[0] = job.index;
+        this.calculatingRow[0] = -1;
+      }
+      const hints = job.jobType === JobType.Row ? this.rowsHints[job.index] : this.colsHints[job.index];
+      const result = await this.optimizedRowOrCol(job.jobType === JobType.Row, hints, job.index, Infinity);
+      if (result !== false) {
+        for (const [i, field] of result.entries()) {
+          if (field !== SolutionField.Unknown) {
+            const pos = job.jobType === JobType.Row ? this.getPos(job.index, i) : this.getPos(i, job.index);
+            if (this.solution[pos] !== field) {
+              this.solution[pos] = field;
+              if (job.jobType === JobType.Row) {
+                colPriorities[i]++;
+              } else {
+                rowPriorities[i]++;
+
+              }
+            }
+          }
+        }
+      }
+    }
+    console.log(colPriorities, rowPriorities);
+    debugger;
   }
   async solve(disableRow: boolean = false, disableCol: boolean = false) {
     let counter = 0;

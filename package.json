@@ -68,7 +68,7 @@
     "@types/request-promise": "^4.1.42",
     "bluebird": "^3.5.3",
     "cross-env": "^5.2.0",
-    "electron": "^4.0.4",
+    "electron": "^7.2.4",
     "electron-builder": "^20.38.5",
     "electron-debug": "^2.1.0",
     "electron-webpack": "^2.6.1",
